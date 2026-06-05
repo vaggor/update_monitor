@@ -1,58 +1,242 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Update Monitor
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+A Laravel-based background service that monitors device firmware download pages for new releases and sends email alerts when a new version is detected.
 
-## About Laravel
+Built as a practical tool for tracking Cudy networking device firmware, it is designed to be easily extended to monitor any product page that publishes version numbers in HTML.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+---
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Features
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+- **Automated version  fetches HTML from configured URLs and parses firmware version strings using a regex patternscraping** 
+- **Change  compares the detected version against the last known version stored in the databasedetection** 
+- **Email  sends a formatted HTML email notification when a new version is found, including the previous version, new version, and a direct link to the download pagealerts** 
+- **Daily  runs automatically via Laravel's built-in task schedulerscheduling** 
 
-## Learning Laravel
+---
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+## Tech Stack
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+| Layer        | Technology                        |
+|--------------|-----------------------------------|
+| Framework    | Laravel 13 (PHP 8.3+)             |
+| Database     | DB of choice (configurable)             |
+| HTTP Client  | Laravel `Http` facade (Guzzle)    |
+| Mail         | Laravel `Mail` facade (Mailable)  |
+| Scheduling   | Laravel Task Scheduler            |
+| Testing      | PHPUnit 12                        |
 
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
+---
 
-## Agentic Development
+## Architecture Overview
 
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
-
-```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+                  Laravel Scheduler                  
+          Schedule::command('monitor:firmware')      
+                      (daily)                        
 
-## Contributing
+                       
+    Artisan CommandCheckFirmwareUpdates             
+  app/Console/Commands/            
+           
+                       
+   UpdateMonitor::  Eloquent Modelall()             
+   (reads from DB)                  
+          
+  for each monitor entry:                       
+   Http::get($  Fetch download page HTMLurl)                  
+          
+                       
+   parseVersion($  Regex version extractionhtml)              
+          
+                       
+              version changed?
+             /              \
+           YES               NO
+                            
+  Update timestamp   Send    email        
+ alert  only, no email     via    Mail    
+      
+            
+ Update DB with    
+ new version +     
+ timestamp         
+   
+```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+---
 
-## Code of Conduct
+## Project Structure
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+```
+app/
+ Console/
+ Commands/   
+ CheckFirmwareUpdates.php   # Core command: fetch, parse, notify       
+ Mail/
+ FirmwareUpdateAlert.php        # Mailable for email alerts   
+ Models/
+ UpdateMonitor.php              # Eloquent model for monitored devices   
+config/
+ monitor.php                        # Notification email address
+database/
+ factories/
+ UpdateMonitorFactory.php       # Factory for seeding/testing   
+ migrations/
+ ..._create_update_monitor_table.php   
+ seeders/
+ UpdateMonitor.php    
+resources/views/
+ emails/
+ firmware-update.blade.php      # HTML email template    
+routes/
+ console.php                        # Scheduler definition
+```
 
-## Security Vulnerabilities
+---
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+## Database Schema
 
-## License
+### `update_monitors`
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+| Column            | Type         | Description                                           |
+|-------------------|--------------|-------------------------------------------------------|
+| `id`              | bigint       | Primary key                                           |
+| `name`            | string       | Human-readable device name (e.g. `AP3000D Firmware`)  |
+| `url`             | string       | URL of the firmware download page                     |
+| `last_version`    | string/null  | Last detected version string                          |
+| `last_checked_at` | timestamp    | When the page was last successfully checked           |
+| `created_at`      | timestamp    | Record creation time                                  |
+| `updated_at`      | timestamp    | Record last update time                               |
+
+---
+
+## Setup
+
+### Requirements
+
+- PHP 8.3+
+- Composer
+- Node.js + npm
+- An SMTP mail provider (or `log` driver for local dev)
+
+### Install
+
+```bash
+git clone <repo-url> update_monitor
+cd update_monitor
+
+composer setup
+```
+
+The `composer setup` script will:
+1. Install PHP and JS dependencies
+2. Copy `.env.example` to `.env` and generate an app key
+3. Run all database migrations
+4. Build frontend assets
+
+### Configure Environment
+
+Edit `.env` and set the following:
+
+```env
+# Mail  use 'log' for local testing, 'smtp' for productiondriver 
+MAIL_MAILER=smtp
+MAIL_HOST=smtp.example.com
+MAIL_PORT=587
+MAIL_USERNAME=your@email.com
+MAIL_PASSWORD=secret
+MAIL_FROM_ADDRESS=alerts@example.com
+
+# The address that will receive firmware update alerts
+MONITOR_NOTIFY_EMAIL=you@example.com
+```
+
+### Seed the Database
+
+To add the default Cudy AP3000D monitor entry:
+
+```bash
+php artisan db:seed --class=UpdateMonitor
+```
+
+Or insert entries directly via Tinker:
+
+```bash
+php artisan tinker
+```
+
+```php
+\App\Models\UpdateMonitor::create([
+    'name'         => 'My Device Firmware',
+    'url'          => 'https://example.com/firmware-download-page',
+    'last_version' => null,
+]);
+```
+
+---
+
+## Usage
+
+### Run Manually
+
+```bash
+php artisan monitor:firmware
+```
+
+Sample output:
+
+```
+Checking for updates: AP3000D Firmware...
+Detected version: 2.3.14 | Stored: 2.3.13
+```
+
+### Run on a Schedule
+
+Ensure the Laravel scheduler is registered with your system's cron by adding one entry:
+
+```cron
+* * * * * cd /path/to/update_monitor && php artisan schedule:run >> /dev/null 2>&1
+```
+
+The command is configured to run daily (see `routes/console.php`).
+
+### Run the Development Server
+
+```bash
+composer dev
+```
+
+This starts the Laravel server, queue worker, log viewer (Pail), and Vite in one terminal via `concurrently`.
+
+---
+
+## Email Notification
+
+When a new firmware version is detected, the recipient receives an HTML email:
+
+- **Subject:** `Firmware Update:  v2.3.14 available`AP3000D 
+- **Body:** Previous version, new version (highlighted in green), and a button linking directly to the download page
+
+The email template is at `resources/views/emails/firmware-update.blade.php`.
+
+---
+
+## Adding More Devices
+
+This tool is not limited to the AP3000D. Any device whose download page renders the version number inside a `<div class="dl-row ... left ..."><div class="main">X.X.X</div>` HTML structure can be monitored.
+
+To track additional devices, insert new rows into the `update_monitors` table with the appropriate `name` and `url`.
+
+To support pages with a different HTML structure, update or extend the `parseVersion()` method in `CheckFirmwareUpdates.php`.
+
+---
+
+## Testing
+
+```bash
+composer test
+```
+
+---
