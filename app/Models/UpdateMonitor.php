@@ -13,5 +13,10 @@ class UpdateMonitor extends Model
         'name',
         'url',
         'last_version',
+        'last_checked_at',
+    ];
+
+    protected $casts = [
+        'last_checked_at' => 'datetime',
     ];
 }
